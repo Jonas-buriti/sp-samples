@@ -94,5 +94,52 @@ var SPUtils = {
             });
             return jsonObj
         })
-    }
+    },
+	terminateWorkflow(listId, itemId, stepName) {
+		// you should load SP.js, SP.Runtime.js and SP.workflowservices.js in your page / master
+		var context = SP.ClientContext.get_current();
+		var workflowServicesManager = SP.WorkflowServices.WorkflowServicesManager.newObject(context, context.get_web());
+		var workflowInstanceService = workflowServicesManager.getWorkflowInstanceService();
+		var wfInstances = workflowInstanceService.enumerateInstancesForListItem(listId, itemId);
+		context.load(wfInstances);
+		return new Promise(function (resolveMain, rejectMain) {
+			context.executeQueryAsync(
+				function (sender, args) {
+					var instancesEnum = wfInstances.getEnumerator();
+					var calls = [];
+
+					while (instancesEnum.moveNext()) {
+						var instance = instancesEnum.get_current();
+						var step = instance.get_objectData().get_properties().UserStatus || '';
+						if (step.toLowerCase() == stepName.toLowerCase()) {
+							workflowInstanceService.terminateWorkflow(instance);
+
+							var call = new Promise(function (resolveChild, rejectChild) {
+								context.executeQueryAsync(
+									function (sender, args) {
+										return resolveChild()
+									},
+									function (sender, args) {
+										console.log("Failed to terminate workflow.");
+										rejectChild("Error: " + args.get_message() + "\n" + args.get_stackTrace());
+									}
+								);
+							});
+							calls.push(call)
+						}
+
+						return Promise.all(calls)
+							.then(resolveMain)
+					}
+
+					return response;
+				},
+				function (sender, args) {
+					console.log("Failed to load instances.");
+					rejectMain("Error: " + args.get_message() + "\n" + args.get_stackTrace());
+				}
+			);
+		});
+
+	},
 }
